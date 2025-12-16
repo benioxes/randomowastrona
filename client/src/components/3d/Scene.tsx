@@ -1,12 +1,26 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import StarField from './StarField';
 import { useStore } from '@/lib/store';
 import { SpatialWindow } from './SpatialWindow';
+import { wsManager } from '@/lib/websocket';
+import { WorkspaceManager } from '../ui/WorkspaceManager';
 
 const Scene = () => {
   const windows = useStore((state) => state.windows);
+
+  useEffect(() => {
+    // Connect to WebSocket for future real-time features
+    wsManager.connect();
+
+    // Load workspaces on mount
+    useStore.getState().loadWorkspaces();
+
+    return () => {
+      wsManager.disconnect();
+    };
+  }, []);
 
   return (
     <div className="w-full h-full absolute inset-0 bg-black">
@@ -19,7 +33,6 @@ const Scene = () => {
         
         <StarField count={3000} />
         
-        {/* Environment for reflections on glass */}
         <Environment preset="city" /> 
 
         <group>
@@ -37,7 +50,6 @@ const Scene = () => {
           ))}
         </group>
 
-        {/* Controls to look around, but maybe limit them so we don't get lost */}
         <OrbitControls 
           enablePan={false} 
           enableZoom={true} 
@@ -60,6 +72,8 @@ const Scene = () => {
         AETHER OS v0.1 <br/>
         <span className="text-[10px] opacity-50">SPATIAL COMPUTING ENV</span>
       </div>
+
+      <WorkspaceManager />
     </div>
   );
 };
@@ -69,6 +83,7 @@ const DockItem = ({ icon, label, onClick }: { icon: string, label: string, onCli
     onClick={onClick}
     className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 hover:scale-110 transition-all flex items-center justify-center text-white font-mono font-bold border border-white/5 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
     title={label}
+    data-testid={`button-dock-${label.toLowerCase()}`}
   >
     {icon}
   </button>
