@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { workspaceAPI } from './api';
+import { wsManager } from './websocket';
 import type { Workspace } from '@shared/schema';
 
 export interface WindowState {
@@ -13,11 +14,25 @@ export interface WindowState {
   type: 'terminal' | 'notes' | 'browser' | 'settings';
 }
 
+export interface RemoteCursor {
+  id: string;
+  username: string;
+  color: string;
+  position: [number, number, number];
+  lastUpdate: number;
+}
+
 interface StoreState {
   windows: WindowState[];
   activeWindowId: string | null;
   currentWorkspaceId: string | null;
   workspaces: Workspace[];
+  
+  // Multiplayer state
+  userId: string;
+  username: string;
+  userColor: string;
+  remoteCursors: Map<string, RemoteCursor>;
   
   // Window operations
   addWindow: (type: WindowState['type'], title: string, content: React.ReactNode) => void;
@@ -31,15 +46,30 @@ interface StoreState {
   loadWorkspaces: () => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   autoSaveWorkspace: () => Promise<void>;
+  
+  // Multiplayer operations
+  setUsername: (username: string) => void;
+  updateLocalCursor: (position: [number, number, number]) => void;
+  handleRemoteMessage: (data: any) => void;
+  broadcastWindowMove: (windowId: string, position: [number, number, number]) => void;
+  broadcastWindowAction: (action: 'add' | 'remove', window?: WindowState) => void;
 }
+
+// Generate random user color
+const generateUserColor = () => {
+  const colors = ['#8b5cf6', '#22d3ee', '#f472b6', '#4ade80', '#facc15', '#fb923c'];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+let saveTimeout: NodeJS.Timeout | null = null;
 
 export const useStore = create<StoreState>((set, get) => ({
   windows: [
     {
       id: '1',
       title: 'Welcome to Aether',
-      content: 'Welcome to the spatial operating system. Your workspace is automatically saved.',
-      position: [0, 0, 0],
+      content: 'A collaborative 3D spatial operating system. Drag windows to move them. Throw them to see physics! Open workspaces panel to save your layout.',
+      position: [0, 0.5, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       type: 'notes',
@@ -49,56 +79,144 @@ export const useStore = create<StoreState>((set, get) => ({
   currentWorkspaceId: null,
   workspaces: [],
   
-  addWindow: (type, title, content) => set((state) => {
+  // Multiplayer
+  userId: uuidv4(),
+  username: `User_${Math.floor(Math.random() * 1000)}`,
+  userColor: generateUserColor(),
+  remoteCursors: new Map(),
+  
+  addWindow: (type, title, content) => {
     const id = uuidv4();
-    const offset = (state.windows.length * 0.5) % 3;
+    const state = get();
+    const offset = (state.windows.length * 0.8) % 4;
     
-    const newState = {
-      windows: [
-        ...state.windows,
-        {
-          id,
-          title,
-          content: typeof content === 'string' ? content : '',
-          position: [-2 + offset, 0 + (Math.random() * 0.5), 0 + (Math.random() * 0.5)] as [number, number, number],
-          rotation: [0, 0, 0] as [number, number, number],
-          scale: [1, 1, 1] as [number, number, number],
-          type,
-        }
-      ],
-      activeWindowId: id,
+    const newWindow: WindowState = {
+      id,
+      title,
+      content: typeof content === 'string' ? content : '',
+      position: [-2 + offset, 0.5 + (Math.random() * 0.5 - 0.25), Math.random() * 0.5 - 0.25],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      type,
     };
     
-    // Auto-save after adding window
-    setTimeout(() => get().autoSaveWorkspace(), 500);
+    set((state) => ({
+      windows: [...state.windows, newWindow],
+      activeWindowId: id,
+    }));
     
-    return newState;
-  }),
+    // Broadcast to other users
+    get().broadcastWindowAction('add', newWindow);
+    
+    // Throttled auto-save
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => get().autoSaveWorkspace(), 2000);
+  },
 
-  removeWindow: (id) => set((state) => {
-    const newState = {
+  removeWindow: (id) => {
+    set((state) => ({
       windows: state.windows.filter((w) => w.id !== id),
       activeWindowId: state.activeWindowId === id ? null : state.activeWindowId,
-    };
+    }));
     
-    setTimeout(() => get().autoSaveWorkspace(), 500);
+    get().broadcastWindowAction('remove', { id } as WindowState);
     
-    return newState;
-  }),
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => get().autoSaveWorkspace(), 2000);
+  },
 
   focusWindow: (id) => set({ activeWindowId: id }),
 
-  updateWindowPosition: (id, position) => set((state) => {
-    const newState = {
-      windows: state.windows.map((w) => 
+  updateWindowPosition: (id, position) => {
+    set((state) => ({
+      windows: state.windows.map((w) =>
         w.id === id ? { ...w, position } : w
       ),
-    };
+    }));
+  },
+
+  broadcastWindowMove: (windowId, position) => {
+    const state = get();
+    wsManager.send({
+      type: 'window_move',
+      userId: state.userId,
+      windowId,
+      position,
+    });
+  },
+
+  broadcastWindowAction: (action, window) => {
+    const state = get();
+    wsManager.send({
+      type: 'window_action',
+      userId: state.userId,
+      action,
+      window: window ? {
+        id: window.id,
+        title: window.title,
+        content: typeof window.content === 'string' ? window.content : '',
+        position: window.position,
+        rotation: window.rotation,
+        scale: window.scale,
+        type: window.type,
+      } : undefined,
+    });
+  },
+
+  setUsername: (username) => set({ username }),
+
+  updateLocalCursor: (position) => {
+    const state = get();
+    wsManager.send({
+      type: 'cursor',
+      userId: state.userId,
+      username: state.username,
+      color: state.userColor,
+      position,
+    });
+  },
+
+  handleRemoteMessage: (data) => {
+    const state = get();
     
-    setTimeout(() => get().autoSaveWorkspace(), 1000);
-    
-    return newState;
-  }),
+    if (data.userId === state.userId) return; // Ignore own messages
+
+    switch (data.type) {
+      case 'cursor':
+        set((state) => {
+          const newCursors = new Map(state.remoteCursors);
+          newCursors.set(data.userId, {
+            id: data.userId,
+            username: data.username,
+            color: data.color,
+            position: data.position,
+            lastUpdate: Date.now(),
+          });
+          return { remoteCursors: newCursors };
+        });
+        break;
+
+      case 'window_move':
+        set((state) => ({
+          windows: state.windows.map((w) =>
+            w.id === data.windowId ? { ...w, position: data.position } : w
+          ),
+        }));
+        break;
+
+      case 'window_action':
+        if (data.action === 'add' && data.window) {
+          set((state) => ({
+            windows: [...state.windows, data.window],
+          }));
+        } else if (data.action === 'remove' && data.window) {
+          set((state) => ({
+            windows: state.windows.filter((w) => w.id !== data.window.id),
+          }));
+        }
+        break;
+    }
+  },
 
   loadWorkspace: async (workspaceId: string) => {
     try {
@@ -139,7 +257,7 @@ export const useStore = create<StoreState>((set, get) => ({
         });
         set({ currentWorkspaceId: workspace.id });
       }
-      
+
       await get().loadWorkspaces();
     } catch (error) {
       console.error('Failed to save workspace:', error);
@@ -180,7 +298,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       await workspaceAPI.delete(id);
       await get().loadWorkspaces();
-      
+
       if (get().currentWorkspaceId === id) {
         set({ currentWorkspaceId: null });
       }
@@ -189,3 +307,8 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 }));
+
+// Initialize WebSocket message handler
+wsManager.addHandler((data) => {
+  useStore.getState().handleRemoteMessage(data);
+});

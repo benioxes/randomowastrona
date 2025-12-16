@@ -1,0 +1,108 @@
+Nazwa Projektu: "Aether - Collaborative Spatial OS"
+1. Koncept (The "Elevator Pitch")
+Aether to wirtualny system operacyjny działający w przeglądarce, osadzony w trójwymiarowej przestrzeni (Spatial Computing). Użytkownicy nie pracują na płaskich kartach, ale na "lewitujących" szklanych panelach w proceduralnie generowanym kosmosie. Projekt umożliwia pracę grupową w czasie rzeczywistym (jak Figma/Google Docs), posiada wbudowanego asystenta AI, który zarządza plikami, i wykorzystuje zaawansowaną fizykę interfejsu.
+
+2. Dlaczego to jest trudne i imponujące?
+Wydajność: Renderowanie 3D w 60/120 FPS przy jednoczesnym zarządzaniu ciężkim UI.
+
+Synchronizacja: Stan aplikacji (kto co przesuwa, kto co pisze) musi być synchronizowany w milisekundach między użytkownikami.
+
+Matematyka/Shadery: Własne shadery GLSL do efektów wizualnych (szkło, dym, światło).
+
+Architektura: Skomplikowane zarządzanie stanem (globalny stan 3D + lokalny stan UI).
+
+Specyfikacja Techniczna (Tech Stack)
+To jest "nowoczesny standard" dla zaawansowanych aplikacji.
+
+Frontend: React (Next.js 14 App Router), TypeScript.
+
+3D Engine: Three.js + React Three Fiber (R3F) + React Three Drei.
+
+Fizyka/Animacja: Rapier (fizyka), Framer Motion (animacje UI), GSAP.
+
+State Management: Zustand (dla UI) + Valtio (dla proxy state w 3D).
+
+Backend/Real-time: Node.js z Socket.io lub Liveblocks/Y.js (CRDTs - to kluczowe dla bezkonfliktowej współpracy).
+
+Baza danych: PostgreSQL (Supabase) + Prisma.
+
+AI: OpenAI API (GPT-4o) lub lokalny model via WebLLM.
+
+Mechanizmy i Funkcjonalności (Co ma tam być?)
+A. Proceduralny "Świat" (Shadery)
+Tło nie może być zdjęciem. Musi to być interaktywny shader.
+
+Opis: Setki tysięcy cząsteczek (particles), które reagują na ruch myszki użytkownika. Gdy przesuwasz kursor, cząsteczki "uciekają" lub tworzą wiry.
+
+Trudność: Pisanie kodu GLSL (Vertex & Fragment Shaders) i optymalizacja przez InstancedMesh.
+
+B. Szklany Interfejs (Glassmorphism & Physics)
+Okna aplikacji (Notatnik, Terminal, Odtwarzacz Muzyki) to obiekty 3D.
+
+Mechanika: Okna mają fizykę. Możesz rzucić oknem w bok, a ono odbije się od "ściany" ekranu z bezwładnością. Okna załamują światło (refrakcja) tego, co jest za nimi.
+
+Interakcja: Drag & Drop plików między oknami w przestrzeni 3D.
+
+C. Multiplayer w czasie rzeczywistym
+To jest "killer feature".
+
+Cursor Tracking: Widzisz kursory innych użytkowników jako małe, świecące drony w przestrzeni 3D.
+
+Współdzielony stan: Jeśli Ty otworzysz okno z kodem, Twój kolega widzi to samo okno otwierające się u niego. Piszecie w tym samym czasie (mechanizm CRDT - Conflict-free Replicated Data Types).
+
+D. Inteligentny Terminal (AI Agent)
+Nie zwykły czat, ale terminal sterujący systemem.
+
+Komenda: Wpisujesz: "Stwórz notatkę ze streszczeniem tego, co robią inni użytkownicy i zmień tło na tryb nocny".
+
+Działanie: AI analizuje logi z Socket.io (co robią inni), tworzy plik w wirtualnym systemie plików i zmienia zmienne w shaderze tła (uniforms).
+
+Jak to zbudować? (Instrukcja dla AI/Deva)
+Skopiuj poniższy prompt i użyj go jako "Master Plan" w rozmowie z AI (np. ze mną w kolejnych krokach lub z Cursor/Github Copilot), aby generować kod modułami.
+
+Prompt dla AI (Struktura projektu):
+"Działasz jako Senior Creative Developer. Chcę zbudować 'Aether' – eksperymentalny system operacyjny w przeglądarce.
+
+Wymagania Architektoniczne:
+
+Setup: Next.js 14, TypeScript, Tailwind CSS.
+
+Scena 3D: Skonfiguruj Canvas z @react-three/fiber. Wyłącz domyślne HTML scrollowanie.
+
+Świat: Stwórz komponent StarField, używając points i niestandardowego ShaderMaterial, który animuje się w czasie i reaguje na pozycję myszy (przekazywaną przez useFrame).
+
+System Okien: Stwórz store w Zustand, który trzyma tablicę otwartych okien (id, pozycja x/y/z, content, rozmiar).
+
+Komponent Okna: Każde okno to <mesh> z materiałem MeshTransmissionMaterial (z @react-three/drei) dla efektu grubego szkła. Wewnątrz użyj <Html> z drei, aby renderować interaktywne elementy Reactowe (inputy, przyciski) na powierzchni 3D.
+
+Interakcje: Zaimplementuj logikę Drag&Drop używając @use-gesture/react, która przelicza ruch myszy 2D na pozycję w świecie 3D (raycasting).
+
+Backend (później): Przygotuj hooki pod Y.js do synchronizacji pozycji okien między klientami.
+
+Zacznij od stworzenia struktury folderów i podstawowej sceny 3D z jednym 'szklanym' panelem."
+
+Plan Realizacji Krok po Kroku
+Abyś się nie pogubił, realizuj to w tej kolejności:
+
+Fundament (Canvas): Postaw Next.js, zainstaluj Three.js/R3F. Wyświetl czarny ekran z obracającym się sześcianem, aby sprawdzić, czy działa.
+
+Shadery (The Juice): Zamień tło na animowane cząsteczki (możesz znaleźć gotowe shadery na ShaderToy i przekonwertować je do R3F). To od razu robi efekt "WOW".
+
+Mieszanie HTML z 3D: Użyj komponentu <Html transform> z biblioteki drei. To pozwoli Ci pisać zwykłego HTML-a (divy, h1, buttony), który będzie zachowywał się jak element 3D (będzie się obracał, skalował).
+
+State Management: Zrób system dodawania/usuwania okien (tablica obiektów w stanie).
+
+Fizyka i Szkło: Dodaj MeshTransmissionMaterial dla efektu szkła. To bardzo obciąża GPU, więc musisz to dobrze skonfigurować (zmniejszyć resolution).
+
+Multiplayer (Backend): Postaw prosty serwer WebSocket (lub użyj Liveblocks.io dla łatwości), który przesyła pozycje okien.
+
+Dopieszczenie: Dźwięki interfejsu (UI Sounds) przy klikaniu, customowy kursor, animacje wejścia (GSAP).
+
+Ostateczny szlif (Portfolio Presentation)
+W portfolio nie wrzucasz tylko linku. Robisz Case Study:
+
+Wideo: Nagraj 30-sekundowy filmik pokazujący współpracę dwóch użytkowników.
+
+Wyzwania: Opisz problem "Z-fighting" (migotanie tekstur) lub optymalizację shaderów. To pokazuje, że wiesz, co robisz.
+
+Kod: Kod musi być czysty, zkomentowany, z użyciem Husky i ESLint.

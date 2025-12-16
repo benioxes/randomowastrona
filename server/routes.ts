@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertWorkspaceSchema } from "@shared/schema";
 import { WebSocketServer, WebSocket } from "ws";
+import { processAetherCommand } from "./openai";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -10,7 +11,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   // WebSocket setup for real-time collaboration
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
-  
+
   const clients = new Set<WebSocket>();
 
   wss.on("connection", (ws) => {
@@ -31,6 +32,23 @@ export async function registerRoutes(
       clients.delete(ws);
       console.log("WebSocket connection closed");
     });
+  });
+
+  // AI Terminal endpoint
+  app.post("/api/ai/command", async (req, res) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      const result = await processAetherCommand(message);
+      res.json(result);
+    } catch (error) {
+      console.error("AI command error:", error);
+      res.status(500).json({ error: "Failed to process command" });
+    }
   });
 
   // Workspace CRUD routes
