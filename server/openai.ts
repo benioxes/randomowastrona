@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+// Using gpt-4o as the latest available OpenAI model
 
 // Only initialize OpenAI if API key is available
 let openai: OpenAI | null = null;
